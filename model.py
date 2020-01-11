@@ -136,19 +136,22 @@ class Net:
         pic = torch.Tensor(pic)
         if self.use_cuda:
             pic = pic.cuda()
-        try:
-            train_dict = pickle.load(open(self.feature_path, 'rb'))
-            train_label = [k for (k, v) in train_dict.items()]
-            train_features = np.array([v for (k, v) in train_dict.items()])
-            train_label = np.array([int(self.refer_map_huawei[str(os.path.split(i)[0])]) for i in train_label])
-            if torch.cuda.is_available():
-                train_features = torch.Tensor(train_features).cuda()
-                train_label = torch.Tensor(train_label).cuda()
-            else:
-                train_features = torch.Tensor(train_features)
-                train_label = torch.Tensor(train_label)
-        except Exception as err:
-            errout = traceback.format_exc()
+        # try:
+        train_dict = pickle.load(open(self.feature_path, 'rb'))
+        train_label = [k for (k, v) in train_dict.items()]
+        train_features = np.array([v for (k, v) in train_dict.items()])
+        train_image_name = np.array([str(os.path.split(i)[-1]) for i in train_label])
+        train_label = np.array([int(self.refer_map_huawei[str(os.path.split(i)[0])]) for i in train_label])
+        if torch.cuda.is_available():
+            train_features = torch.Tensor(train_features).cuda()
+            train_label = torch.Tensor(train_label).cuda()
+            # train_image_name = torch.Tensor(train_image_name).cuda()
+        else:
+            train_features = torch.Tensor(train_features)
+            train_label = torch.Tensor(train_label)
+            # train_image_name = torch.Tensor(train_image_name)
+        # except Exception as err:
+        #     errout = traceback.format_exc()
         if CAM:
             cam, _ = self.gcam(self.model, img , 'layer4', use_cuda=self.use_cuda, mode='resnet')
         with torch.no_grad():
@@ -159,20 +162,22 @@ class Net:
                 eval_features = self.model.module.features
             else:
                 eval_features = self.model.features
-            try:
-                cos_matrix = getCosDist(eval_features, train_features)
-                similarity = get_similarity((cos_matrix))
-                distance, index = torch.topk(similarity, search_length, dim=1)
-                labels = list(train_label[index].cpu().numpy())
-                num_all_pred_cate = len(set(list(labels[0])))
-                top_k_dis = min(top_k, num_all_pred_cate)
-                '''
-                Counter('abcdeabcdabcaba').most_common(3)
-                [('a', 5), ('b', 4), ('c', 3)]
-                '''
-                labels_cos = [Counter(i).most_common(top_k_dis) for i in labels]
-            except Exception as err:
-                errout = traceback.format_exc()
+            # try:
+            cos_matrix = getCosDist(eval_features, train_features)
+            similarity = get_similarity((cos_matrix))
+            distance, index = torch.topk(similarity, search_length, dim=1)
+            labels = list(train_label[index].cpu().numpy())
+            index = index.cpu().numpy()
+            image_names = list(train_image_name[index[0]])
+            num_all_pred_cate = len(set(list(labels[0])))
+            top_k_dis = min(top_k, num_all_pred_cate)
+            '''
+            Counter('abcdeabcdabcaba').most_common(3)
+            [('a', 5), ('b', 4), ('c', 3)]
+            '''
+            labels_cos = [Counter(i).most_common(top_k_dis) for i in labels]
+            # except Exception as err:
+            #     errout = traceback.format_exc()
 
             if self.use_cuda:
                 prob = prob.cpu().numpy().tolist()
@@ -204,9 +209,9 @@ class Net:
             result_cos = zip(label_cos_all[0], times_cos_all[0])
             result_prob = zip(label_prob_all[0], score_prob_all[0])
         if CAM:
-            return [result_prob, result_cos, cam]
+            return [result_prob, result_cos, image_names, cam]
         else:
-            return [result_prob, result_cos]
+            return [result_prob, result_cos, image_names]
 
 if __name__ == '__main__':
     model_path = './model_best.pth.tar'
