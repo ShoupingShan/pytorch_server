@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# @Time    : 2018/4/24 10:04
-# @Author  : zhoujun
+# @Time    : 2019/1/12 22：01
+# @Author  : shp
 import flask
 from flask_uploads import UploadSet, IMAGES, configure_uploads, ALL
 from flask import request, Flask, redirect, url_for, render_template
@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 # baseurl = 'http://192.168.31.96:80/'
 baseurl = 'http://192.168.1.102:80/'
 reverse_dict = dict([(v,k) for (k,v) in label_id_name_dict.items()])
-app = Flask(__name__, static_url_path='')
+app = Flask(__name__)
 app.config.from_object(config)
 photos = UploadSet('PHOTO')
 configure_uploads(app, photos)
