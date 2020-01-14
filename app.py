@@ -14,10 +14,11 @@ import config
 from utils import Database
 
 from werkzeug.utils import secure_filename
-# baseurl = 'http://192.168.31.96:80/'
-baseurl = 'http://192.168.1.102:80/'
+
+baseurl = config.base_url
+
 reverse_dict = dict([(v,k) for (k,v) in label_id_name_dict.items()])
-app = Flask(__name__)
+app = Flask(__name__, static_folder='./uploads')
 app.config.from_object(config)
 photos = UploadSet('PHOTO')
 configure_uploads(app, photos)
@@ -46,6 +47,21 @@ def upload():
         result = []
     return render_template('upload.html', img_path=img_path, result=result)
 
+@app.route('/deleteItem', methods=['GET', 'POST'])
+def deleteItem():
+    data = dict()
+    data['state'] = True
+    data['data'] = dict()
+    if request.method == 'GET':
+        user_name = request.args.get('userName') #SHP
+        id = request.args.get('id')
+        try:
+            DB.query_by_id(user_name, id)
+            data['code'] = 1000
+        except:
+            data['code'] = - 1000
+    return flask.jsonify(data)
+
 @app.route('/queryDetail', methods=['GET', 'POST'])
 def queryDetail():
     data = dict()
@@ -55,11 +71,11 @@ def queryDetail():
         user_name = request.args.get('userName') #SHP
         query_id = request.args.get('id')
         history = DB.query_by_id(user_name, query_id)
+        history['shotImage'] = baseurl + history['shotImage']
+        history['sourceImage'] = baseurl + history['sourceImage']
+        history['cam'] = baseurl + history['cam']
         data['data'] =history
         data['code'] = 1000
-        data['predictions'] = [{'label':'121', 'probability':0.9}, {'label':'434', 'probability':0.29}]
-        data['matches'] = [{'label':'121', 'times':19, 'similar':'http://192.168.1.101:80/source/15787318349849.jpg'}, {'label':'434', 'times':1, 'similar':'http://192.168.1.101:80/source/15787318349849.jpg'}, \
-            {'label':'121', 'times':19, 'similar':'http://192.168.1.101:80/source/15786952789964.jpg'}, {'label':'434', 'times':1, 'similar':'http://192.168.1.101:80/source/15786952789964.jpg'}]
     return flask.jsonify(data)
 
 
@@ -73,6 +89,10 @@ def record_user():
         pageNum = int(request.args.get('pageNum')) - 1
         pageSize = int(request.args.get('pageSize'))
         total, history = DB.query(user_name, pageNum, pageSize)
+        for index, item in enumerate(history):
+            history[index]['shotImage'] = baseurl + item['shotImage']
+            history[index]['sourceImage'] = baseurl + item['sourceImage']
+            # history[index]['cam'] = baseurl + history[index]['cam']
         if total == None or history == None:
             data['code'] = -1000
         else:
@@ -102,7 +122,7 @@ def search():
         data['data'] = []
         for i in search_result:
             cate_name = label_id_name_dict[i]
-            coverImage = baseurl + 'category/' + cate_name.replace('/', '_') + '.jpg'
+            coverImage = baseurl + 'uploads/category/' + cate_name.replace('/', '_') + '.jpg'
             dic = {'id':i, 'coverImageUrl':coverImage , 'name':cate_name.split('/')[-1]}
             data['data'].append(dic)
     return flask.jsonify(data)
@@ -116,7 +136,7 @@ def query_by_category():
         cate_name = label_id_name_dict[query_id]
         cate = label_id_name_dict[query_id].split('/')[0]
         name = label_id_name_dict[query_id].split('/')[-1]
-        coverImage = baseurl + 'category/' + cate_name.replace('/', '_') + '.jpg'
+        coverImage = baseurl + 'uploads/category/' + cate_name.replace('/', '_') + '.jpg'
         data['code'] = 1000
         data['data'] = dict()
         data['data']['coverImageUrl'] = coverImage
@@ -131,7 +151,7 @@ def query_by_category():
     return flask.jsonify(data)
 
 @app.route('/query_all_result', methods=['GET', 'POST'])
-def query_all_result():
+def query_all_result(): #查询所有的类别信息
     data = dict()
     data['state'] = False
     data['code'] = 1000
@@ -144,7 +164,7 @@ def query_all_result():
         end_index = min(len(label_id_name_dict.keys()), (pageNum + 1) * pageSize)
         data['data']['list'] = []
         for i in range(start_index, end_index):
-            coverImage = baseurl + 'category/' + label_id_name_dict[str(i)].replace('/', '_') + '.jpg'
+            coverImage = baseurl + 'uploads/category/' + label_id_name_dict[str(i)].replace('/', '_') + '.jpg'
             dic = {'id':str(i), 'coverImageUrl':coverImage, 'name':label_id_name_dict[str(i)], \
                 'createTime':time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 'content':''}
             data['data']['list'].append(dic)
@@ -157,6 +177,7 @@ def classification():
     if request.method == 'POST':
         user_name = request.values.get('userName')
         location = request.values.get('location')
+        print('userName: ', user_name, 'location: ', location)
         f = request.files['image']
         basepath = os.path.dirname(__file__)
         t = time.time()
@@ -165,9 +186,15 @@ def classification():
         if not os.path.exists(upload_path):
             os.makedirs(upload_path)
         image_path = os.path.join(upload_path, f_name)
-        source_path = baseurl + 'source/' + f_name
+        small_image_path = os.path.join(basepath, 'uploads', 'small', f_name)
         f.save(image_path)
-        img = np.array(Image.open(image_path).convert('RGB'))
+        img1 = Image.open(image_path).convert('RGB')
+        img = np.array(img1)
+        img1 = img1.resize((100, 100), Image.ANTIALIAS)
+        img1.save(small_image_path)
+        # print('DEBUG ', small_image_path)
+        small_image_path = 'uploads/small/' + f_name
+        # print('DEBUG: ', image_path, small_image_path)
         try:
             topk = request.form['topk']
         except:
@@ -175,12 +202,14 @@ def classification():
         data = predict_img(img, top_k=int(topk), search_length=20, file_name=f_name)
         # pred_id_template = data['matches'][0]['label']
         cam = data['cam']
+        # print('DEBUG CAM', cam)
+        data['cam'] = baseurl + data['cam']
         match_images = data['match_images']
         softmax_prob = data['predictions']
         match_times = data['matches']
         '''
         user_name   #当前查询用户昵称
-        source_path  #用户查询图片本地保存地址
+        small_image_path  #用户查询图片本地保存缩略图地址
         time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) #用户查询时间戳
         location  #用户查询时所在的地点
         match_times #使用矩阵匹配的结果{'label':'', 'times':''}
@@ -189,7 +218,7 @@ def classification():
         cam #类激活图保存地址
         '''
         DB.update(user_name, 
-        source_path, 
+        small_image_path, 
         time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 
         location, 
         match_times,
@@ -227,13 +256,12 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None):
     # data['predictions']['prob'] = list()
     # data['predictions']['times'] = list()
     prob_result, cos_result, match_image_name = result[0], result[1], result[2]
-    match_image_name = [baseurl + 'train/' + i for i in match_image_name]
+    match_image_name = [baseurl + 'uploads/train/' + i for i in match_image_name]
+    basepath = os.path.dirname(__file__)
     if CAM:
         cam= result[3]
-        basepath = os.path.dirname(__file__)
         cv2.imwrite(os.path.join(basepath, 'uploads', 'cam' ,file_name), cam)
-        #data['cam'] = 'http://192.168.1.101:80' + '/' + file_name
-        data['cam'] = baseurl + 'cam/' + file_name
+        data['cam'] = 'uploads/cam/' + file_name
     for label, prob in prob_result:
         prob_predict = {'label': label, 'probability': ("%.4f" % prob)}
         data['predictions'].append(prob_predict)
@@ -272,4 +300,5 @@ if __name__ == '__main__':
 
     # result = model.predict(img, top_k=3, search_length=20)
     # print('debug')
+    # app.run(host='192.168.1.103',port=5000)
     app.run()

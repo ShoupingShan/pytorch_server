@@ -12,14 +12,17 @@ class Database:
             self.DB = pickle.load(f)
             print('Load database!')
     def update(self, nickname, image_path, update_time, upload_location, match_times, softmax_prob, match_images, cam=''):
-        print(upload_location)
+        # print(upload_location)
         if nickname not in self.DB.keys():
             self.DB[nickname] = {}
             self.DB[nickname]['query_list'] = []
+            sourceImage = image_path.replace('small', 'source')
             dic = {'createTime':update_time, \
                 'name':os.path.split(image_path)[-1], \
-                'shotImage':image_path, 'location':upload_location, \
+                'shotImage':image_path, \
+                'location':upload_location, \
                 'templateId': 0, \
+                'sourceImage':sourceImage, \
                 'pred_result':match_times[0]['label'], \
                 'match_times':match_times, \
                 'softmax_prob':softmax_prob, \
@@ -30,10 +33,11 @@ class Database:
             self.DB[nickname]['total'] = 1
         else:
             current_id = self.DB[nickname]['total']
+            sourceImage = image_path.replace('small', 'source')
             dic = {'createTime':update_time, \
                 'name':os.path.split(image_path)[-1], \
                 'shotImage':image_path, 'location':upload_location, \
-                'templateId': current_id, \
+                'templateId': current_id, 'sourceImage':sourceImage,\
                 'pred_result':match_times[0]['label'], \
                 'match_times':match_times, \
                 'softmax_prob':softmax_prob, \
@@ -46,11 +50,31 @@ class Database:
         with open(self.query_path, 'wb') as f:
             pickle.dump(self.DB, f)
     def clear(self, nickname):
+        with open(self.query_path, 'rb') as f: #获取最新的数据库结果
+            self.DB = pickle.load(f)
         if nickname not in self.DB.keys():
             print('%s is not saved in database before')
             # self.DB[nickname] = {}
         else:
             self.DB[nickname] = {}
+            self.DB[nickname]['total'] = 0
+        with open(self.query_path, 'wb') as f:
+            pickle.dump(self.DB, f)
+    
+    def deleteItem(self, nickname, id):
+        with open(self.query_path, 'rb') as f: #获取最新的数据库结果
+            self.DB = pickle.load(f)
+        if nickname not in self.DB.keys():
+            print('%s is not saved in database before')
+            # self.DB[nickname] = {}
+        else:
+            self.DB[nickname].pop(id)
+            self.DB[nickname]['total'] -= 1
+            for i in range(id, self.DB[nickname]['total']):
+                self.DB[nickname]['templateId'] = i
+        with open(self.query_path, 'wb') as f:
+            pickle.dump(self.DB, f)
+
     
     def query(self, nickname, pageNum=0, pageSize=10):
         with open(self.query_path, 'rb') as f: #获取最新的数据库结果
@@ -58,7 +82,7 @@ class Database:
         if nickname not in self.DB.keys():
             print('%s is not saved in database before')
             # self.DB[nickname] = {}
-            return None, None
+            return None, []
         else:
             reverse_list = self.DB[nickname]['query_list'].copy()
             reverse_list.reverse()
@@ -69,15 +93,14 @@ class Database:
             return total, history
     
     def query_by_id(self, nickname, id):
-        print('*'*20, nickname, id)
         with open(self.query_path, 'rb') as f: #获取最新的数据库结果
             self.DB = pickle.load(f)
         if nickname not in self.DB.keys():
             print('%s is not saved in database before')
-            return None, None
+            return None, []
         else:
             history = self.DB[nickname]['query_list'][int(id)]
-            print('*'*20, history)
+            # print(history)
             return history
 
 
