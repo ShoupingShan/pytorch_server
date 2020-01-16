@@ -2,6 +2,7 @@ from PIL import Image
 from collections import OrderedDict
 import torch.nn as nn
 import torch
+import time
 import traceback
 import numpy as np
 from collections import Counter
@@ -87,7 +88,7 @@ class Net:
                                          std=[0.229, 0.224, 0.225])
 
         self.transforms = transforms.Compose([
-            transforms.Resize(352),
+            transforms.Resize(320),
             transforms.CenterCrop(320),
             #ScaleResize((320, 320)),
             transforms.ToTensor(),
@@ -113,19 +114,19 @@ class Net:
             self.model.load_state_dict(state_dict)
         
 
-    def gcam(self, model, img, target_layer_names, use_cuda=True, mode='resnet'):
+    def gcam(self, model, img, pic, target_layer_names, use_cuda=True, mode='resnet'):
         import cv2
         grad_cam = GradCam(model=model, target_layer_names=[target_layer_names], use_cuda=use_cuda, mode=mode)
         img = img
         img = np.float32(cv2.resize(img, (320, 320))) / 255
-        input = preprocess_image(img)
+        input = pic
         target_index = None
-        mask, output = grad_cam(input, target_index)
+        mask, output, features = grad_cam(input, target_index)
         cam = show_cam_on_image(img, mask)
         # import matplotlib.pyplot as plt
         # plt.imshow(cam)
         # plt.show()
-        return cam, output
+        return cam, output, features
 
     def predict(self, img, top_k=1, search_length=20, CAM=False):
         self.model.eval()
@@ -153,15 +154,24 @@ class Net:
         # except Exception as err:
         #     errout = traceback.format_exc()
         if CAM:
-            cam, _ = self.gcam(self.model, img , 'layer4', use_cuda=self.use_cuda, mode='resnet')
+            # start = time.time()
+            cam, pred_score, eval_features = self.gcam(self.model, img, pic, 'layer4', use_cuda=self.use_cuda, mode='resnet')
+            # print('CAM out', pred_score)
+            # print('CAM features', features)
+            # print('CAM Time:', time.time() - start)
         with torch.no_grad():
-            pred_score = self.model(pic)
+            # start = time.time()
+            # pred_score = self.model(pic)
+            # print(pred_score)
+            # print('Forward Time:', time.time() - start)
+
             pred_score = F.softmax(pred_score.data, dim=1)
             prob, cate = torch.topk(pred_score.data, k=top_k)
-            if self.use_cuda:
-                eval_features = self.model.module.features
-            else:
-                eval_features = self.model.features
+            # if self.use_cuda:
+            #     eval_features = self.model.module.features
+            # else:
+            #     eval_features = self.model.features
+            #     print('Forward fea:', eval_features)
             # try:
             cos_matrix = getCosDist(eval_features, train_features)
             similarity = get_similarity((cos_matrix))
@@ -222,4 +232,4 @@ if __name__ == '__main__':
     refer = pr_dic
     model = Net(model_path, feature_path, idx2label=idx2label, refer=refer)
     result = model.predict(img, top_k=3, search_length=20, CAM=True)
-    print('debug')
+    print(result[2])

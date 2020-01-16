@@ -7,10 +7,19 @@ from torch.nn import init
 import math
 
 __all__  = ['se_res2net50_26w_8s']
+class MyAdaptiveAvgPool2d(nn.Module):
+    def __init__(self, sz=None):
+        super().__init__()
+    def forward(self, x): 
+        inp_size = x.size()
+        avg_pool = torch.mean(torch.mean(x, dim=3), dim=2)
+        # return nn.AvgPool2d(x, inp_size[2])
+        return avg_pool
+
 class SELayer(nn.Module):
     def __init__(self, channel, reduction=16):
         super(SELayer, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.avg_pool = MyAdaptiveAvgPool2d()
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False), nn.ReLU(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False), nn.Sigmoid())
@@ -146,7 +155,8 @@ class Res2Net(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2, att_type=att_type)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, att_type=att_type)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, att_type=att_type)
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        # self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.avgpool = MyAdaptiveAvgPool2d()
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         init.kaiming_normal_(self.fc.weight)
@@ -225,10 +235,28 @@ def se_res2net50_26w_8s(pretrained=False, num_classes=1000, **kwargs):
 
 if __name__ == '__main__':
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-    images = torch.rand(1, 3, 224, 224).cuda(0)
-    model = se_res2net50_26w_8s(pretrained=True)
-    model = model.cuda(0)
+    # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+    from collections import OrderedDict
+    
+    images = torch.rand(1, 3, 224, 224)
+    model = se_res2net50_26w_8s(pretrained=False, num_classes=54)
+    model_path = 'model_best.pth.tar'
+    import torch.optim as optim
+    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
+    device = torch.device("cpu")
+    checkpoint = torch.load(model_path, map_location='cpu')
+    state_dict = OrderedDict()
+    for key, value in checkpoint['state_dict'].items():
+        tmp = key[7:]
+        state_dict[tmp] = value
+    for key, value in checkpoint['optimizer'].items():
+        print(key)
+    model.load_state_dict(state_dict)
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    state = {
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict()
+        }
+    # torch.save(state, 'avg2.pth.tar')
     r = model(images)
-    # print(r)
     print(model(images).size())

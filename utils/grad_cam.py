@@ -29,7 +29,7 @@ class FeatureExtractor():
                 x.register_hook(self.save_gradient)
                 outputs += [x]
                 break
-        return outputs, x
+        return outputs, x #[layer4_output], layer4_output
 
 class ModelOutputs():
 	""" Class for making a forward pass, and getting:
@@ -55,12 +55,15 @@ class ModelOutputs():
 		else:
 			output = self.model.avgpool(output)
 			output = output.view(output.size(0), -1)
+			mid_feature = output
+			# print('OOOO', output)
 		# output = self.model.classifier(output)
 		if self.mode =='resnet':
 			output = self.model.fc(output)
+			# print('CAM output:', output)
 		else:
 			output = self.model.classifier(output)
-		return target_activations, output
+		return target_activations, output, mid_feature
 
 def preprocess_image(img):
 	means=[0.485, 0.456, 0.406]
@@ -104,9 +107,9 @@ class GradCam:
 
 	def __call__(self, input, index = None):
 		if self.cuda:
-			features, output = self.extractor(input.cuda())
+			features, output, mid_feature = self.extractor(input.cuda())
 		else:
-			features, output = self.extractor(input)
+			features, output, mid_feature = self.extractor(input)
 
 		if index == None:
 			index = np.argmax(output.cpu().data.numpy())
@@ -140,7 +143,7 @@ class GradCam:
 		cam = cv2.resize(cam, (320, 320))
 		cam = cam - np.min(cam)
 		cam = cam / np.max(cam)
-		return cam, output
+		return cam, output, mid_feature
 
 class GuidedBackpropReLU(Function):
 
