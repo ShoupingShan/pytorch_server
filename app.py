@@ -182,24 +182,27 @@ def classification():
         basepath = os.path.dirname(__file__)
         t = time.time()
         f_name=str(int(t))+str(random.randint(1000 , 9999))+'.'+f.filename.rsplit('.',1)[1]
-        upload_path = os.path.join(basepath, 'uploads', 'source')
+        upload_path = os.path.join(basepath, 'uploads', 'source', user_name)
         if not os.path.exists(upload_path):
             os.makedirs(upload_path)
         image_path = os.path.join(upload_path, f_name)
-        small_image_path = os.path.join(basepath, 'uploads', 'small', f_name)
+        save_small_dir = os.path.join(basepath, 'uploads', 'small', user_name)
+        if not os.path.exists(save_small_dir):
+            os.makedirs(save_small_dir)
+        small_image_path = os.path.join(save_small_dir, f_name)
         f.save(image_path)
         img1 = Image.open(image_path).convert('RGB')
         img = np.array(img1)
         img1 = img1.resize((100, 100), Image.ANTIALIAS)
         img1.save(small_image_path)
         # print('DEBUG ', small_image_path)
-        small_image_path = 'uploads/small/' + f_name
+        small_image_path = 'uploads/small/' + user_name + '/' + f_name
         # print('DEBUG: ', image_path, small_image_path)
         try:
             topk = request.form['topk']
         except:
             topk = 5
-        data = predict_img(img, top_k=int(topk), search_length=20, file_name=f_name)
+        data = predict_img(img, top_k=int(topk), search_length=20, file_name=f_name, user_name=user_name)
         # pred_id_template = data['matches'][0]['label']
         cam = data['cam']
         # print('DEBUG CAM', cam)
@@ -246,22 +249,23 @@ def predict():
     return flask.jsonify(data)
 
 
-def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None):
+def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_name=''):
     data = dict()
     start = time.time()
     result = model.predict(img, top_k=top_k, search_length=search_length, CAM=CAM)
     cost_time = time.time() - start
     data['predictions'] = list()
     data['matches'] = list()
-    # data['predictions']['prob'] = list()
-    # data['predictions']['times'] = list()
     prob_result, cos_result, match_image_name = result[0], result[1], result[2]
     match_image_name = [baseurl + 'uploads/train/' + i for i in match_image_name]
     basepath = os.path.dirname(__file__)
     if CAM:
         cam= result[3]
-        cv2.imwrite(os.path.join(basepath, 'uploads', 'cam' ,file_name), cam)
-        data['cam'] = 'uploads/cam/' + file_name
+        save_cam_dir = os.path.join(basepath, 'uploads', 'cam', user_name)
+        if not os.path.exists(save_cam_dir):
+            os.makedirs(save_cam_dir)
+        cv2.imwrite(os.path.join(save_cam_dir ,file_name), cam)
+        data['cam'] = 'uploads/cam/' + user_name + '/' + file_name
     for label, prob in prob_result:
         prob_predict = {'label': label, 'probability': ("%.4f" % prob)}
         data['predictions'].append(prob_predict)
@@ -278,9 +282,6 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None):
     data['time'] = cost_time
     data['match_images'] = match_image_name
     data['code'] = 1000
-    # print('*'*10,'\n')
-    # print(data)
-    # print('*'*10,'\n')
     return data
 
 
