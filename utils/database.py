@@ -13,6 +13,9 @@ class Database:
             print('Load database!')
     def update(self, nickname, image_path, update_time, upload_location, match_times, softmax_prob, match_images, cam=''):
         # print(upload_location)
+        with open(self.query_path, 'rb') as f:
+            self.DB = pickle.load(f)
+            # print('Load database!')
         if nickname not in self.DB.keys():
             self.DB[nickname] = {}
             self.DB[nickname]['query_list'] = []
@@ -91,6 +94,8 @@ class Database:
             end_index = min(total, (pageNum + 1)*pageSize)
             history = reverse_list[start_index:end_index]
             return total, history
+        with open(self.query_path, 'wb') as f:
+            pickle.dump(self.DB, f)
     
     def query_by_id(self, nickname, id):
         with open(self.query_path, 'rb') as f: #获取最新的数据库结果
@@ -102,6 +107,8 @@ class Database:
             history = self.DB[nickname]['query_list'][int(id)]
             # print(history)
             return history
+        with open(self.query_path, 'wb') as f:
+            pickle.dump(self.DB, f)
 
 
         
