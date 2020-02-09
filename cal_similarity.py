@@ -31,10 +31,11 @@ def get_similarity(ham_martix):
     return similarity_matrix
 
 if __name__ == '__main__':
-    a = np.random.rand(1,5)
+    a = np.random.rand(2,5)
     b = np.random.rand(10, 5)
     a = torch.Tensor(a)
     b = torch.Tensor(b)
     cos_matrix = getCosDist(a, b)
     similarity = get_similarity((cos_matrix))
+    distance, index = torch.topk(similarity, 3, dim=1)
     print('Done')

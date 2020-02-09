@@ -53,10 +53,10 @@ def deleteItem():
     data['state'] = True
     data['data'] = dict()
     if request.method == 'GET':
-        user_name = request.args.get('userName') #SHP
-        id = request.args.get('id')
+        user_name = request.args.get('userId') #SHP
+        id = int(request.args.get('deleteId'))
         try:
-            DB.query_by_id(user_name, id)
+            DB.deleteItem(user_name, id)
             data['code'] = 1000
         except:
             data['code'] = - 1000
@@ -71,6 +71,7 @@ def queryDetail():
         user_name = request.args.get('userName') #SHP
         query_id = request.args.get('id')
         history = DB.query_by_id(user_name, query_id)
+        history['match_images'] = [baseurl + i for i in history['match_images']]
         history['shotImage'] = baseurl + history['shotImage']
         history['sourceImage'] = baseurl + history['sourceImage']
         history['cam'] = baseurl + history['cam']
@@ -88,7 +89,8 @@ def record_user():
         user_name = request.args.get('userId') #SHP
         pageNum = int(request.args.get('pageNum')) - 1
         pageSize = int(request.args.get('pageSize'))
-        total, history = DB.query(user_name, pageNum, pageSize)
+        deleteNum = int(request.args.get('deleteNum'))
+        total, history = DB.query(user_name, pageNum, pageSize, deleteNum=deleteNum)
         for index, item in enumerate(history):
             history[index]['shotImage'] = baseurl + item['shotImage']
             history[index]['sourceImage'] = baseurl + item['sourceImage']
@@ -257,7 +259,7 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_n
     data['predictions'] = list()
     data['matches'] = list()
     prob_result, cos_result, match_image_name = result[0], result[1], result[2]
-    match_image_name = [baseurl + 'uploads/train/' + i for i in match_image_name]
+    match_image_name = ['uploads/train/' + i for i in match_image_name]
     basepath = os.path.dirname(__file__)
     if CAM:
         cam= result[3]
@@ -273,7 +275,8 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_n
         cos_predict = {'label': label, 'times': ("%d" % times)}
         data['matches'].append(cos_predict)
 
-    md_name = data['matches'][0]['label'].split('/')[-1] + '.md'
+    md_name = data['predictions'][0]['label'].split('/')[-1] + '.md'
+    print(md_name.split('.')[0])
     baike = os.path.join(basepath, 'baike', md_name)
     with open(baike, 'r', encoding='UTF-8') as f:
         bk = f.read()
