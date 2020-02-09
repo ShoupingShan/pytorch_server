@@ -86,7 +86,12 @@ class Database:
             # self.DB[nickname] = {}
         else:
             id = self.DB[nickname]['total'] - id - 1
-            print('id=',id)
+            small_image = os.path.join(self.DB[nickname]['query_list'][id]['shotImage'])
+            source_image = os.path.join(self.DB[nickname]['query_list'][id]['sourceImage'])
+            cam_image = os.path.join(self.DB[nickname]['query_list'][id]['cam'])
+            for image in [small_image, source_image, cam_image]:
+                if os.path.exists(image):
+                    os.remove(image)
             self.DB[nickname]['query_list'].pop(id)
             self.DB[nickname]['total'] -= 1
             for i in range(id, self.DB[nickname]['total']):
