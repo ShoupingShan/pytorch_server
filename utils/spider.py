@@ -112,9 +112,10 @@ class Xian:
             pageCode=response.read().decode('utf-8')
             soup = bs4.BeautifulSoup(pageCode,"html.parser")
             update_items = soup.find_all('div', {'id':'maintt'})
-            sub_title = update_items[0].find_all('div',{'class':'mess'})[0].contents[0]
-            update_time = sub_title[3:19]
-            update_webpage = sub_title.split('来源:')[-1]
+            sub_title = update_items[0].find_all('div',{'class':'mess'})[0]
+            update_time = sub_title.contents[0][3:19]#截取发布时间
+            upload_web = sub_title.find('a')
+            update_webpage = upload_web.contents[0]
             timeArray = time.strptime(update_time, '%Y-%m-%d %H:%M')
             timestamp = time.mktime(timeArray)
             items = soup.find_all('div', {'id':'content'})
@@ -294,6 +295,10 @@ class Xian:
         items = soup.find_all('div', {'id':'content'})
         # soup.decompose()
         for index, item in enumerate(items):
+            align = item.find_all('p')
+            for i in align:
+                if 'align' in i.attrs.keys():
+                    i.attrs['align'] = 'left'
             images = item.find_all('img')
             for ima in images:
                 image_name = ima.attrs['src'].split('\\')[-1]

@@ -6,13 +6,14 @@ from flask_uploads import UploadSet, IMAGES, configure_uploads, ALL
 from flask import request, Flask, redirect, url_for, render_template
 import time, os, sys,random
 from model import Net
-import base64, cv2, json
+import base64, cv2, json, shutil
 from model import label_id_name_dict
 from PIL import Image
 import numpy as np
 import config
 from utils import Database
 from utils import Xian
+from utils import Guest
 from utils import Feedback
 from werkzeug.utils import secure_filename
 adminGroup = config.adminGroup
@@ -26,11 +27,11 @@ configure_uploads(app, photos)
 DB = Database()
 NEWS = Xian()
 FD = Feedback()
+GST = Guest()
 
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 @app.route('/demo', methods=['POST', 'GET'])
 def upload():
@@ -63,6 +64,8 @@ def deleteItem():
             data['code'] = 1000
         except:
             data['code'] = - 1000
+        GST.update(user_name, time.time(), 'Delete')
+        GST.auto_save()
     return flask.jsonify(data)
 
 @app.route('/get_chart', methods=['GET', 'POST'])
@@ -106,7 +109,13 @@ def feedback():
         user_name = request.args.get('userId')
         user_feedback = request.args.get('user_feedback')
         feedback_image_name = os.path.split(request.args.get('name'))[-1]
-        image_path = 'uploads/source/' + user_name + '/' + feedback_image_name
+        save_feedback_folder = os.path.join('./uploads/feedback/' + user_name)
+        if not os.path.exists(save_feedback_folder):
+            os.makedirs(save_feedback_folder)
+        image_path_save = os.path.join(save_feedback_folder, feedback_image_name)
+        image_path_source = os.path.join('./uploads/source/' + user_name + '/' + feedback_image_name)
+        image_path = 'uploads/feedback/' + user_name + '/' + feedback_image_name
+        shutil.copy(image_path_source, image_path_save)
         predictions = request.args.get('prediction')
         current_time = time.time()
         if predictions == 'undefined':
@@ -117,6 +126,8 @@ def feedback():
                 data['code'] = 1000
             except:
                 data['code'] = -1000
+        GST.update(user_name, time.time(), 'Feedback')
+        GST.auto_save()
     return flask.jsonify(data)
 
 @app.route('/queryDetail', methods=['GET', 'POST'])
@@ -135,7 +146,6 @@ def queryDetail():
         data['data'] =history
         data['code'] = 1000
     return flask.jsonify(data)
-
 
 @app.route('/record_user', methods=['GET', 'POST'])
 def record_user():
@@ -188,6 +198,8 @@ def search():
             coverImage = baseurl + 'uploads/category/' + cate_name.replace('/', '_') + '.jpg'
             dic = {'id':i, 'coverImageUrl':coverImage , 'name':cate_name.split('/')[-1]}
             data['data'].append(dic)
+        GST.update(user_name, time.time(), 'Search_cate')
+        GST.auto_save()
     return flask.jsonify(data)
 
 @app.route('/admin_feedback_by_username', methods=['GET', 'POST'])
@@ -262,6 +274,26 @@ def admin_feedback_statistic():
             data['code'] = -1000
     return flask.jsonify(data)
 
+@app.route('/admin_guest_statistic', methods=['GET', 'POST'])
+def admin_guest_statistic():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        user_name = request.args.get('userId')
+        try:
+            refer_date, refer_user, today, total = FD.query_statistic()
+            data['data'] = {}
+            data['data']['date_category'] = [i[0] for i in refer_date]
+            data['data']['date_times'] = [i[1] for i in refer_date]
+            data['data']['user_category'] = [i[0] for i in refer_user]
+            data['data']['user_times'] = [i[1] for i in refer_user]
+            data['today'] = today
+            data['total'] = total
+            data['code'] = 1000
+        except:
+            data['code'] = -1000
+    return flask.jsonify(data)
+
 @app.route('/search_news_by_key_word', methods=['GET', 'POST'])
 def search_news_by_key_word():
     data = dict()
@@ -282,6 +314,8 @@ def search_news_by_key_word():
             coverImage = baseurl + 'uploads/images/' + os.path.split(item['cover'])[-1]
             dic = {'id':search_index[i],'time':item['timestamp'], 'coverImageUrl':coverImage , 'name':cate_name.split('/')[-1]}
             data['data'].append(dic)
+        GST.update(user_name, time.time(), 'Search_news')
+        GST.auto_save()
     return flask.jsonify(data)
 
 #根据id查询新闻资讯
@@ -291,6 +325,7 @@ def query_news_by_id():
     data['state'] = True
     if request.method == 'GET':
         query_id = int(request.args.get('templateId'))
+        userId = request.args.get('userName')
         query_result = NEWS.query_detail(query_id, baseurl)
         coverImage = baseurl + 'uploads/images/' + os.path.split(query_result['cover'])[-1]
         data['code'] = 1000
@@ -300,7 +335,10 @@ def query_news_by_id():
         data['data']['time'] = query_result['timestamp']
         data['data']['content'] = query_result['link']
         data['data']['webpage'] = query_result['webpage']
-        
+
+        GST.update(userId, time.time(), 'News')
+        GST.auto_save()
+        # print(data['data']['content'])
     return flask.jsonify(data)
 
 @app.route('/query_by_category', methods=['GET', 'POST'])
@@ -309,6 +347,7 @@ def query_by_category():
     data['state'] = True
     if request.method == 'GET':
         query_id = request.args.get('templateId')
+        userId = request.args.get('userName')
         cate_name = label_id_name_dict[query_id]
         cate = label_id_name_dict[query_id].split('/')[0]
         name = label_id_name_dict[query_id].split('/')[-1]
@@ -324,6 +363,8 @@ def query_by_category():
         with open(baike, 'r', encoding='UTF-8') as f:
             bk = f.read()
         data['data']['content'] = bk
+        GST.update(userId, time.time(), 'Baike')
+        GST.auto_save()
     return flask.jsonify(data)
 
 @app.route('/query_all_information', methods=['GET', 'POST'])
@@ -346,7 +387,7 @@ def query_all_information(): #查询所有的类别信息
                 'createTime':item['timestamp'], 'content':'', 'time':item['timestamp'], 'webpage':item['webpage']}
             data['data']['list'].append(dic)
     data['data']['total'] = length
-
+    # print(data)
     return flask.jsonify(data)
 
 @app.route('/query_all_result', methods=['GET', 'POST'])
@@ -406,7 +447,7 @@ def classification():
         cam = data['cam']
         # print('DEBUG CAM', cam)
         data['cam'] = baseurl + data['cam']
-        match_images = data['match_images']
+        match_images = data['match_images_save']
         softmax_prob = data['predictions']
         match_times = data['matches']
         '''
@@ -427,6 +468,8 @@ def classification():
         softmax_prob,
         match_images,
         cam)
+        GST.update(user_name, time.time(), 'Classification')
+        GST.auto_save()
     return flask.jsonify(data)
 
 @app.route('/predict', methods=['GET', 'POST'])
@@ -442,7 +485,7 @@ def predict():
             topk = 1
         img = np.fromstring(img, np.uint8)
         img = img.reshape(shape)
-        print('image size: ','*'*10,img.shape)
+        # print('image size: ','*'*10,img.shape)
         # img = np.array(Image.open(img).convert('RGB'))
         data = predict_img(img, top_k=int(topk), search_length=20)
     return flask.jsonify(data)
@@ -456,7 +499,8 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_n
     data['predictions'] = list()
     data['matches'] = list()
     prob_result, cos_result, match_image_name = result[0], result[1], result[2]
-    match_image_name = ['uploads/train/' + i for i in match_image_name]
+    match_image_name_upload = [baseurl + 'uploads/train/' + i for i in match_image_name]
+    match_image_name_save = ['uploads/train/' + i for i in match_image_name]
     basepath = os.path.dirname(__file__)
     if CAM:
         cam= result[3]
@@ -480,10 +524,54 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_n
     data['state'] = True
     data['content'] = bk
     data['time'] = cost_time
-    data['match_images'] = match_image_name
+    data['match_images_save'] = match_image_name_save
+    data['match_images'] = match_image_name_upload
     data['code'] = 1000
     return data
 
+@app.route('/admin_guest_by_username', methods=['GET', 'POST'])
+def admin_guest_by_username():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        search_name = request.args.get('user_name')
+        user_name = request.args.get('userId')
+        search_name = search_name.strip()
+        if search_name in ['', ' ', '/', '_']:
+            data['code'] = -1000 #查找不合法
+            return flask.jsonify(data)
+        else:
+            refer_days, refer_detail, today_num, total_num =  GST.statistic_by_user(search_name)
+            # print(refer_days, refer_detail, today_num, total_num)
+            data['time_cate'] = [i[0] for i in refer_days]
+            data['time_value'] = [i[1] for i in refer_days]
+            data['detail_cate'] = [i[0] for i in refer_detail]
+            data['detail_value'] = [i[1] for i in refer_detail]
+            data['today'] = today_num
+            data['total'] = total_num
+            data['code'] = 1000
+    return flask.jsonify(data)
+
+@app.route('/admin_guest_by_time', methods=['GET', 'POST'])
+def admin_guest_by_time():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        try:
+            during_time = float(request.args.get('during_time')) #天
+        except:
+            data['code'] = -1000#查找不合法
+            return flask.jsonify(data)
+        user_name = request.args.get('userId')
+        refer_user, refer_detail, today_num, total_num =  GST.statistic_by_time(during_time)
+        data['user_cate'] = [i[0] for i in refer_user]
+        data['user_value'] = [i[1] for i in refer_user]
+        data['detail_cate'] = [i[0] for i in refer_detail]
+        data['detail_value'] = [i[1] for i in refer_detail]
+        data['today'] = today_num
+        data['total'] = total_num
+        data['code'] = 1000
+    return flask.jsonify(data)
 
         
 
