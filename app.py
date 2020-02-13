@@ -12,9 +12,10 @@ from PIL import Image
 import numpy as np
 import config
 from utils import Database
-
+from utils import Xian
+from utils import Feedback
 from werkzeug.utils import secure_filename
-
+adminGroup = config.adminGroup
 baseurl = config.base_url
 
 reverse_dict = dict([(v,k) for (k,v) in label_id_name_dict.items()])
@@ -23,6 +24,8 @@ app.config.from_object(config)
 photos = UploadSet('PHOTO')
 configure_uploads(app, photos)
 DB = Database()
+NEWS = Xian()
+FD = Feedback()
 
 @app.route('/')
 def index():
@@ -60,6 +63,60 @@ def deleteItem():
             data['code'] = 1000
         except:
             data['code'] = - 1000
+    return flask.jsonify(data)
+
+@app.route('/get_chart', methods=['GET', 'POST'])
+def get_chart():
+    data = dict()
+    data['state'] = True
+    data['data'] = dict()
+    if request.method == 'GET':
+        user_name = request.args.get('userId')
+        mode = request.args.get('mode')
+        try:
+            with open('./train_log.txt', 'r', encoding='UTF-8') as f:
+                history = f.readlines()
+            tags = history[0].strip().split('\t')
+            data['lr'] = []
+            data['train_loss'] = []
+            data['eval_loss'] = []
+            data['train_acc'] = []
+            data['eval_acc'] = []
+            data['epoch'] = []
+            for index, line in enumerate(history[1:]):
+                item = line.strip().split('\t')
+                data['lr'].append(float(item[0]))
+                data['train_loss'].append(float(item[1]))
+                data['eval_loss'].append(float(item[2]))
+                data['train_acc'].append(float(item[3]))
+                data['eval_acc'].append(float(item[4]))
+                data['epoch'].append(str(index + 1))
+            data['code'] = 1000
+        except:
+            data['code'] = -1000
+        # print('Debug', data)
+    return flask.jsonify(data)
+
+@app.route('/feedback', methods=['GET', 'POST'])
+def feedback():
+    data = dict()
+    data['state'] = True
+    data['data'] = dict()
+    if request.method == 'GET':
+        user_name = request.args.get('userId')
+        user_feedback = request.args.get('user_feedback')
+        feedback_image_name = os.path.split(request.args.get('name'))[-1]
+        image_path = 'uploads/source/' + user_name + '/' + feedback_image_name
+        predictions = request.args.get('prediction')
+        current_time = time.time()
+        if predictions == 'undefined':
+            data['code'] = -1000
+        else:            
+            try:
+                FD.updata(user_name, feedback_image_name, image_path, current_time, user_feedback, predictions)
+                data['code'] = 1000
+            except:
+                data['code'] = -1000
     return flask.jsonify(data)
 
 @app.route('/queryDetail', methods=['GET', 'POST'])
@@ -101,11 +158,15 @@ def record_user():
             data['code'] = 1000
             data['data']['total'] = total
             data['data']['list'] = history
+        if user_name in adminGroup:
+            data['isAdmin'] = True
+        else:
+            data['isAdmin'] = False
 
     return flask.jsonify(data)
 
-@app.route('/search', methods=['GET', 'POST'])
 # 查询指定名称
+@app.route('/search', methods=['GET', 'POST'])
 def search():
     data = dict()
     data['state'] = True
@@ -129,6 +190,119 @@ def search():
             data['data'].append(dic)
     return flask.jsonify(data)
 
+@app.route('/admin_feedback_by_username', methods=['GET', 'POST'])
+def admin_feedback_by_username():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        search_name = request.args.get('user_name')
+        user_name = request.args.get('userId')
+        search_name = search_name.strip()
+        if search_name in ['', ' ', '/', '_']:
+            data['code'] = -1000 #查找不合法
+        else:
+            search_result =  FD.query_by_user(search_name)
+            if len(search_result) == 0:
+                data['code'] = -2000 #未查询到相关信息
+            else:
+                data['data'] = []
+                for i, item in enumerate(search_result):
+                    local_time =  time.localtime(float(item['feedbackTime']))
+                    feedback_time = time.strftime('%Y-%m-%d %H:%M', local_time)
+                    feedbackImage = baseurl + item['imagePath']
+                    dic = {'id':i,'time':feedback_time, 'coverImageUrl':feedbackImage ,
+                    'feedback': item['user_feedback'], 'prediction':item['prediction'], 'user':search_name}
+                    data['data'].append(dic)
+                data['code'] = 1000
+    return flask.jsonify(data)
+
+@app.route('/admin_feedback_by_time', methods=['GET', 'POST'])
+def admin_feedback_by_time():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        try:
+            during_time = float(request.args.get('during_time')) #天
+        except:
+            data['code'] = -1000#查找不合法
+            return flask.jsonify(data)
+        user_name = request.args.get('userId')
+        search_result =  FD.query_by_time(during_time)
+        if len(search_result) == 0:
+            data['code'] = -2000 #未查询到相关信息
+        else:
+            data['data'] = []
+            for i, item in enumerate(search_result):
+                local_time =  time.localtime(float(item['feedbackTime']))
+                feedback_time = time.strftime('%Y-%m-%d %H:%M', local_time)
+                feedbackImage = baseurl + item['imagePath']
+                dic = {'id':i,'time':feedback_time, 'coverImageUrl':feedbackImage ,
+                'feedback': item['user_feedback'], 'prediction':item['prediction'], 'user':item['userId']}
+                data['data'].append(dic)
+            data['code'] = 1000
+    return flask.jsonify(data)
+
+@app.route('/admin_feedback_statistic', methods=['GET', 'POST'])
+def admin_feedback_statistic():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        user_name = request.args.get('userId')
+        try:
+            refer_date, refer_user, today, total = FD.query_statistic()
+            data['data'] = {}
+            data['data']['date_category'] = [i[0] for i in refer_date]
+            data['data']['date_times'] = [i[1] for i in refer_date]
+            data['data']['user_category'] = [i[0] for i in refer_user]
+            data['data']['user_times'] = [i[1] for i in refer_user]
+            data['today'] = today
+            data['total'] = total
+            data['code'] = 1000
+        except:
+            data['code'] = -1000
+    return flask.jsonify(data)
+
+@app.route('/search_news_by_key_word', methods=['GET', 'POST'])
+def search_news_by_key_word():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        search_name = request.args.get('name')
+        user_name = request.args.get('userId')
+        search_name = search_name.strip()
+        if search_name in ['', ' ', '/', '_']:
+            data['code'] = -1000
+        else:
+            data['code'] = 1000
+        search_result, search_index =  NEWS.query_by_key_word(search_name)
+        
+        data['data'] = []
+        for i, item in enumerate(search_result):
+            cate_name = item['title']
+            coverImage = baseurl + 'uploads/images/' + os.path.split(item['cover'])[-1]
+            dic = {'id':search_index[i],'time':item['timestamp'], 'coverImageUrl':coverImage , 'name':cate_name.split('/')[-1]}
+            data['data'].append(dic)
+    return flask.jsonify(data)
+
+#根据id查询新闻资讯
+@app.route('/query_news_by_id', methods=['GET', 'POST'])
+def query_news_by_id():
+    data = dict()
+    data['state'] = True
+    if request.method == 'GET':
+        query_id = int(request.args.get('templateId'))
+        query_result = NEWS.query_detail(query_id, baseurl)
+        coverImage = baseurl + 'uploads/images/' + os.path.split(query_result['cover'])[-1]
+        data['code'] = 1000
+        data['data'] = dict()
+        data['data']['coverImageUrl'] = coverImage
+        data['data']['name'] = query_result['title']
+        data['data']['time'] = query_result['timestamp']
+        data['data']['content'] = query_result['link']
+        data['data']['webpage'] = query_result['webpage']
+        
+    return flask.jsonify(data)
+
 @app.route('/query_by_category', methods=['GET', 'POST'])
 def query_by_category():
     data = dict()
@@ -150,6 +324,29 @@ def query_by_category():
         with open(baike, 'r', encoding='UTF-8') as f:
             bk = f.read()
         data['data']['content'] = bk
+    return flask.jsonify(data)
+
+@app.route('/query_all_information', methods=['GET', 'POST'])
+def query_all_information(): #查询所有的类别信息
+    data = dict()
+    data['state'] = False
+    data['code'] = 1000
+    data['data'] = dict()
+    if request.method == 'GET':
+        pageNum = int(request.args.get('pageNum')) - 1
+        pageSize = int(request.args.get('pageSize'))
+        if pageNum == 0:
+            NEWS.check_update()
+        result, length = NEWS.query_by_page(pageNum, pageSize)
+        data['data']['list'] = []
+        for i, item in enumerate(result):
+            index = i + pageNum * pageSize
+            coverImage = baseurl + 'uploads/images/' + os.path.split(item['cover'])[-1]
+            dic = {'id':str(index), 'coverImageUrl':coverImage, 'name':item['title'], \
+                'createTime':item['timestamp'], 'content':'', 'time':item['timestamp'], 'webpage':item['webpage']}
+            data['data']['list'].append(dic)
+    data['data']['total'] = length
+
     return flask.jsonify(data)
 
 @app.route('/query_all_result', methods=['GET', 'POST'])
