@@ -196,7 +196,7 @@ class Xian:
                 print('News has been checked!')
                 self.enable=False
                 return
-            if page > 1:
+            if page > 10:
                 self.enable=False
                 return
 
