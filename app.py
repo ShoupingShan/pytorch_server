@@ -368,7 +368,7 @@ def query_by_category():
     return flask.jsonify(data)
 
 @app.route('/query_all_information', methods=['GET', 'POST'])
-def query_all_information(): #查询所有的类别信息
+def query_all_information(): #查询所有的新闻信息
     data = dict()
     data['state'] = False
     data['code'] = 1000
