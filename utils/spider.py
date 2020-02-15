@@ -4,6 +4,8 @@ import bs4, pickle
 import re, os
 import requests
 import time, random
+import sys
+sys.setrecursionlimit(1000000)
 base_url = 'http://news.xiancn.com/'
 class Xian:
     def __init__(self, pkl_path='./data/database'):
@@ -15,6 +17,7 @@ class Xian:
                 content['map'] = {}
                 content['content'] = {}
                 pickle.dump(content, f)
+            print('Init News dataset')
         self.DB_path = os.path.join(pkl_path, 'News.pkl')
         with open(self.DB_path, 'rb') as f:
             self.data = pickle.load(f)
@@ -112,10 +115,14 @@ class Xian:
             pageCode=response.read().decode('utf-8')
             soup = bs4.BeautifulSoup(pageCode,"html.parser")
             update_items = soup.find_all('div', {'id':'maintt'})
+            total_title = update_items[0].find_all('div',{'class':'biaoti'})[0].contents[0]
             sub_title = update_items[0].find_all('div',{'class':'mess'})[0]
             update_time = sub_title.contents[0][3:19]#截取发布时间
             upload_web = sub_title.find('a')
-            update_webpage = upload_web.contents[0]
+            try:
+                update_webpage = upload_web.contents[0]
+            except:
+                update_webpage = sub_title.contents[0][26:]
             timeArray = time.strptime(update_time, '%Y-%m-%d %H:%M')
             timestamp = time.mktime(timeArray)
             items = soup.find_all('div', {'id':'content'})
@@ -160,7 +167,7 @@ class Xian:
                 print(u"连接服务器失败,错误原因:",e.reason)
         
 
-        return h5_name, timestamp, update_webpage
+        return h5_name, timestamp, update_webpage, total_title
         
 
     #加载并提取页面的内容,加入到列表
@@ -177,7 +184,7 @@ class Xian:
         for index, story in enumerate(pageStories):
             # if index == 0:
             #     continue
-            time.sleep(0.01 + random.random())
+            time.sleep(0.1 + random.random())
             self.loadPage()
             if story[0] not in self.content.keys():
                 print('Find new information, update it!')
@@ -185,8 +192,9 @@ class Xian:
                 save_folder=os.path.join('./uploads/images')
                 news_folder= os.path.join('./uploads/news')
                 image_name = self.download_img(story[1], save_folder=save_folder)
-                h5_name, timestamp, webpage = self.download_h5(story[2], news_folder)
+                h5_name, timestamp, webpage, total_title = self.download_h5(story[2], news_folder)
                 self.content[story[0]]['title'] = story[0]
+                self.content[story[0]]['total_title'] = total_title
                 self.content[story[0]]['cover'] = os.path.join(save_folder, image_name)
                 self.content[story[0]]['link'] = os.path.join(news_folder, h5_name)
                 self.content[story[0]]['timestamp'] = timestamp #新闻更新时间
@@ -196,7 +204,8 @@ class Xian:
                 print('News has been checked!')
                 self.enable=False
                 return
-            if page > 10:
+            if page > 2:
+                # print('DEBUG')
                 self.enable=False
                 return
 
@@ -222,20 +231,26 @@ class Xian:
                     del self.stories[0]
                     self.getOneStory(pageStories,newPage)
         except:
+            print('网站限制')
             pass
         self.pageIndex=1
         self.stories = []
+        _data = {}
+        _data['content'] = self.content
+        _data['map'] = self.map
+        # print(_data)
+        # os.remove(self.DB_path)
         with open(self.DB_path, 'wb') as f:
-            data = {}
-            data['content'] = self.content
-            data['map'] = self.map
-            pickle.dump(data, f)
-            print('Database saved')
+            pickle.dump(_data, f)
+        self.content = {}
+        self.map = {}
         self._release_lock()
+        return
         
 
     def query_by_page(self, pageNum, pageSize):
         self._check_status()
+        
         with open(self.DB_path, 'rb') as f:
             self.data = pickle.load(f)
         self.content = self.data['content']
@@ -304,6 +319,12 @@ class Xian:
                 image_name = ima.attrs['src'].split('\\')[-1]
                 image_path = baseurl + 'uploads/news/image/' + image_name
                 ima.attrs['src'] = image_path
+                if 'align' in ima.attrs.keys():
+                    ima.attrs['align'] = 'center'
+                if 'height' in ima.attrs.keys():
+                    ima.attrs['height'] = 'auto'
+                if 'style' in ima.attrs.keys():
+                    ima.attrs['style'] = "max-width:100%;height:auto;display:block"
             if index != len(items) - 1: #删除多余编辑
                 editor = item.find_all('div', {'class':'text'})[0]
                 editor.contents = ''
@@ -314,6 +335,8 @@ class Xian:
                 pass
         local_time =  time.localtime(float(query_result['timestamp']))
         date = time.strftime('%Y-%m-%d %H:%M', local_time)
+        if 'total_title' not in query_result.keys():
+            query_result['total_title'] = query_result['title']
         query_result['timestamp'] = date
         query_result['link'] = soup.prettify()
         if 'webpage' not in query_result.keys():

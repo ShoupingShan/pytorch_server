@@ -331,7 +331,8 @@ def query_news_by_id():
         data['code'] = 1000
         data['data'] = dict()
         data['data']['coverImageUrl'] = coverImage
-        data['data']['name'] = query_result['title']
+        data['data']['name'] = query_result['total_title']
+        # data['data']['name'] = query_result['title']
         data['data']['time'] = query_result['timestamp']
         data['data']['content'] = query_result['link']
         data['data']['webpage'] = query_result['webpage']
