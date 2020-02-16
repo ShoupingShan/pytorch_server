@@ -10,7 +10,7 @@ import torchvision.transforms as transforms
 from cal_similarity import getCosDist, get_similarity
 import torch.nn.functional as F
 import pickle, os, sys
-from utils import preprocess_image, show_cam_on_image, GradCam
+from utils import show_cam_on_image, GradCam
 from models.res2net_se import se_res2net50_26w_8s
 label_id_name_dict = \
             {
