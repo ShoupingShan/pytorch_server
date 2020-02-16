@@ -12,8 +12,9 @@ import argparse
 class FeatureExtractor():
     """ Class for extracting activations and 
     registering gradients from targetted intermediate layers """
-    def __init__(self, model, target_layers):
+    def __init__(self, model, target_layers, mode):
         self.model = model
+        self.mode = mode
         self.target_layers = target_layers
         self.gradients = []
 
@@ -24,7 +25,17 @@ class FeatureExtractor():
         outputs = []
         self.gradients = []
         for name, module in self.model._modules.items():
-            x = module(x)
+            if self.mode == 'efficientnet':
+                if name in self.target_layers:
+                    x = x.detach()
+                if name == '_blocks':
+                    blocks = module._modules.items()
+                    for b in blocks:
+                        x = b[1](x)
+                else:
+                    x = module(x)
+            else:
+                x = module(x)
             if name in self.target_layers:
                 x.register_hook(self.save_gradient)
                 outputs += [x]
@@ -39,10 +50,10 @@ class ModelOutputs():
 	def __init__(self, model, target_layers, mode='resnet'):
 		self.model = model
 		self.mode = mode
-		if mode == 'resnet':
-			self.feature_extractor = FeatureExtractor(self.model, target_layers) #修改self.model.features
+		if mode == 'resnet' or mode == 'efficientnet':
+			self.feature_extractor = FeatureExtractor(self.model, target_layers, mode) #修改self.model.features
 		else:
-			self.feature_extractor = FeatureExtractor(self.model.features, target_layers)
+			self.feature_extractor = FeatureExtractor(self.model.features, target_layers, mode)
 	def get_gradients(self):
 		return self.feature_extractor.gradients
 
@@ -53,32 +64,24 @@ class ModelOutputs():
 		if self.mode == 'vgg16':
 			output = F.adaptive_avg_pool2d(output, (1, 1)).view(output.size(0), -1)
 		else:
-			output = self.model.avgpool(output)
+			if self.mode == 'efficientnet':
+				output = self.model._avg_pooling(output)
+			else:
+				output = self.model.avgpool(output)
 			output = output.view(output.size(0), -1)
 			mid_feature = output
 			# print('OOOO', output)
 		# output = self.model.classifier(output)
 		if self.mode =='resnet':
 			output = self.model.fc(output)
+			# output = self.model._fc(output)
 			# print('CAM output:', output)
+		elif self.mode == 'efficientnet':
+			output = self.model._fc(output)
 		else:
 			output = self.model.classifier(output)
 		return target_activations, output, mid_feature
 
-def preprocess_image(img):
-	means=[0.485, 0.456, 0.406]
-	stds=[0.229, 0.224, 0.225]
-
-	preprocessed_img = img.copy()[: , :, ::-1]
-	for i in range(3):
-		preprocessed_img[:, :, i] = preprocessed_img[:, :, i] - means[i]
-		preprocessed_img[:, :, i] = preprocessed_img[:, :, i] / stds[i]
-	preprocessed_img = \
-		np.ascontiguousarray(np.transpose(preprocessed_img, (2, 0, 1)))
-	preprocessed_img = torch.from_numpy(preprocessed_img)
-	preprocessed_img.unsqueeze_(0)
-	input = Variable(preprocessed_img, requires_grad = True)
-	return input
 
 def show_cam_on_image(img, mask):
 	heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
@@ -121,7 +124,7 @@ class GradCam:
 			one_hot = torch.sum(one_hot.cuda() * output)
 		else:
 			one_hot = torch.sum(one_hot * output)
-		if self.mode == 'resnet':
+		if self.mode == 'resnet' or self.mode == 'efficientnet':
 			self.model.zero_grad()
 		else:
 			self.model.features.zero_grad()
@@ -145,73 +148,12 @@ class GradCam:
 		cam = cam / np.max(cam)
 		return cam, output, mid_feature
 
-class GuidedBackpropReLU(Function):
-
-	def forward(self, input):
-		positive_mask = (input > 0).type_as(input)
-		output = torch.addcmul(torch.zeros(input.size()).type_as(input), input, positive_mask)
-		self.save_for_backward(input, output)
-		return output
-
-	def backward(self, grad_output):
-		input, output = self.saved_tensors
-		grad_input = None
-
-		positive_mask_1 = (input > 0).type_as(grad_output)
-		positive_mask_2 = (grad_output > 0).type_as(grad_output)
-		grad_input = torch.addcmul(torch.zeros(input.size()).type_as(input), torch.addcmul(torch.zeros(input.size()).type_as(input), grad_output, positive_mask_1), positive_mask_2)
-
-		return grad_input
-
-class GuidedBackpropReLUModel:
-	def __init__(self, model, use_cuda):
-		self.model = model
-		self.model.eval()
-		self.cuda = use_cuda
-		if self.cuda:
-			self.model = model.cuda()
-
-		# replace ReLU with GuidedBackpropReLU
-		for idx, module in self.model.features._modules.items():
-			if module.__class__.__name__ == 'ReLU':
-				self.model.features._modules[idx] = GuidedBackpropReLU()
-
-	def forward(self, input):
-		return self.model(input)
-
-	def __call__(self, input, index = None):
-		if self.cuda:
-			output = self.forward(input.cuda())
-			output = output[0] #这里原始网络改变过,返回一个tuple
-		else:
-			output = self.forward(input)
-			output = output[0]  # 这里原始网络改变过,返回一个tuple
-
-		if index == None:
-			index = np.argmax(output.cpu().data.numpy())
-
-		one_hot = np.zeros((1, output.size()[-1]), dtype = np.float32)
-		one_hot[0][index] = 1
-		one_hot = Variable(torch.from_numpy(one_hot), requires_grad = True)
-		if self.cuda:
-			one_hot = torch.sum(one_hot.cuda() * output)
-		else:
-			one_hot = torch.sum(one_hot * output)
-
-		# self.model.features.zero_grad()
-		# self.model.classifier.zero_grad()
-		one_hot.backward(retain_graph=True)
-
-		output = input.grad.cpu().data.numpy()
-		output = output[0,:,:,:]
-
-		return output
 
 def get_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--use-cuda', action='store_true', default=True,
+	parser.add_argument('--use-cuda', action='store_true', default=False,
 	                    help='Use NVIDIA GPU acceleration')
-	parser.add_argument('--image-path', type=str, default='12.png',
+	parser.add_argument('--image-path', type=str, default='1.jpg',
 	                    help='Input image path')
 	args = parser.parse_args()
 	args.use_cuda = args.use_cuda and torch.cuda.is_available()
@@ -222,13 +164,10 @@ def get_args():
 
 	return args
 
+'''
+样例测试
 if __name__ == '__main__':
-	""" python grad_cam.py <path_to_image>
-	1. Loads an image with opencv.
-	2. Preprocesses it for VGG19 and converts to a pytorch variable.
-	3. Makes a forward pass to find the category index with the highest score,
-	and computes intermediate activations.
-	Makes the visualization. """
+
 
 	args = get_args()
 	print('Debug')
@@ -240,18 +179,40 @@ if __name__ == '__main__':
 	# 				target_layer_names = ["norm5"], use_cuda=args.use_cuda, mode='densenet')
 	# grad_cam = GradCam(model=models.vgg16(pretrained=True), \
 	# 				   target_layer_names=["30"], use_cuda=args.use_cuda, mode='vgg16')
-	grad_cam = GradCam(model = models.resnet101(pretrained=False), \
-					target_layer_names = ["layer4"], use_cuda=args.use_cuda, mode='resnet')
+	import torch.nn as nn
+	from eff_model import efficientnet_b5
+	from PIL import Image
+	import torchvision.transforms as transforms
+	normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+	transforms_ = transforms.Compose([
+		transforms.Resize(320),
+		transforms.CenterCrop(320),
+		#ScaleResize((320, 320)),
+		transforms.ToTensor(),
+		normalize
+	])
+	img = np.array(Image.open(args.image_path).convert('RGB'))
+	pic = Image.fromarray(img)
+	pic = transforms_(pic)
+	pic = pic.unsqueeze(0)
 
-	img = cv2.imread(args.image_path, 1)
-	img = np.float32(cv2.resize(img, (224, 224))) / 255
-	input = preprocess_image(img)
+	pic = torch.Tensor(pic)
+	model = efficientnet_b5(pretrained=False)
+	in_features = model._fc.in_features
+	model._fc = nn.Linear(in_features, 57)
+	grad_cam = GradCam(model = model, \
+					target_layer_names = ["_bn1"], use_cuda=args.use_cuda, mode='efficientnet')
 
+	# img = cv2.imread(args.image_path, 1)
+	img = np.float32(cv2.resize(img, (320, 320))) / 255
+	# input = preprocess_image(img)
+	input = pic
 	# If None, returns the map for the highest scoring category.
 	# Otherwise, targets the requested index.
 	target_index = None
 
-	mask = grad_cam(input, target_index)
+	mask,_,_ = grad_cam(input, target_index)
 
 	cam = show_cam_on_image(img, mask)
 	import matplotlib.pyplot as plt 
@@ -259,4 +220,4 @@ if __name__ == '__main__':
 	plt.show()
 	print()
 
-
+'''
