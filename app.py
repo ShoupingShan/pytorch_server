@@ -16,6 +16,7 @@ from utils import Xian
 from utils import Guest
 from utils import Feedback
 from werkzeug.utils import secure_filename
+import matplotlib.pyplot as plt
 adminGroup = config.adminGroup
 baseurl = config.base_url
 
@@ -508,7 +509,17 @@ def predict_img(img, top_k=1, search_length=20, CAM=True, file_name=None, user_n
         save_cam_dir = os.path.join(basepath, 'uploads', 'cam', user_name)
         if not os.path.exists(save_cam_dir):
             os.makedirs(save_cam_dir)
-        cv2.imwrite(os.path.join(save_cam_dir ,file_name), cam)
+        plt.imshow(cam)
+        plt.axis('off')
+
+        plt.gcf().set_size_inches(512 / 100, 512 / 100)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+        plt.margins(0, 0)
+
+        plt.savefig(os.path.join(save_cam_dir ,file_name), dpi=300)
+        # cv2.imwrite(os.path.join(save_cam_dir ,file_name), cam)
         data['cam'] = 'uploads/cam/' + user_name + '/' + file_name
     for label, prob in prob_result:
         prob_predict = {'label': label, 'probability': ("%.4f" % prob)}
@@ -582,13 +593,22 @@ if __name__ == '__main__':
     gpu_id = None
     model_path = './model_best.pth.tar'
     feature_path = './features_train_baidu.pkl'
-    # image = os.path.join('./12.png')
-    # img = np.array(Image.open(image).convert('RGB'))
-    # refer = pr_dic
+    '''
+    from PIL import Image
+    import torch
+    import torchvision.transforms as transforms
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                        std=[0.229, 0.224, 0.225])
+    transforms_ = transforms.Compose([
+		transforms.Resize(512),
+		transforms.CenterCrop(320),
+		#ScaleResize((320, 320)),
+		transforms.ToTensor(),
+		normalize
+	])
+    img = np.array(Image.open('15809656297338.jpg').convert('RGB'))
     model = Net(model_path, feature_path)
-    
-
-    # result = model.predict(img, top_k=3, search_length=20)
-    # print('debug')
-    # app.run(host='192.168.1.103',port=5000)
+    result = model.predict(img, top_k=5, search_length=20, CAM=True)
+    '''
+    model = Net(model_path, feature_path)
     app.run()

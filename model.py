@@ -10,8 +10,9 @@ import torchvision.transforms as transforms
 from cal_similarity import getCosDist, get_similarity
 import torch.nn.functional as F
 import pickle, os, sys
-from utils import show_cam_on_image, GradCam
+from utils import get_CAM
 from models.res2net_se import se_res2net50_26w_8s
+from models.eff_model import efficientnet_b5
 label_id_name_dict = \
             {
                 "0": "工艺品/仿唐三彩",
@@ -67,17 +68,20 @@ label_id_name_dict = \
                 "50": "美食/西安油茶",
                 "51": "美食/贵妃鸡翅",
                 "52": "美食/醪糟",
-                "53": "美食/金线油塔"
+                "53": "美食/金线油塔",
+                "54": "景点/鼓楼",
+                "55": "美食/小炒泡馍",
+                "56": "美食/葫芦头泡馍"
             }
-pr_dic = {'0': 0, '1': 1, '10': 2, '11': 3, '12': 4, '13': 5, '14': 6, '15': 7, '16': 8, '17': 9, '18': 10,
-            '19': 11, '2': 12, '20': 13, '21': 14, '22': 15, '23': 16, '24': 17, '25': 18, '26': 19,
-            '27': 20,'28': 21, '29': 22, '3': 23, '30': 24, '31': 25, '32': 26, '33': 27, '34': 28, '35': 29,
-            '36': 30, '37': 31, '38': 32, '39': 33,'4': 34, '40': 35, '41': 36, '42': 37, '43': 38, '44': 39,
-            '45': 40, '46': 41,'47': 42, '48': 43, '49': 44,'5': 45, '50': 46, '51': 47, '52': 48, '53': 49,
-            '6': 50, '7': 51, '8': 52, '9': 53}
+pr_dic = {'0': 0, '1': 1, '10': 2, '11': 3, '12': 4, '13': 5, '14': 6, '15': 7, '16': 8, '17': 9, '18': 10, 
+            '19': 11, '2': 12, '20': 13,'21': 14, '22': 15, '23': 16, '24': 17, '25': 18, '26': 19, '27': 20, '28': 21, 
+            '29': 22, '3': 23, '30': 24, '31': 25, '32': 26, '33': 27, '34': 28, '35': 29, '36': 30, '37': 31, '38': 32, 
+            '39': 33, '4': 34, '40': 35, '41': 36, '42': 37, '43': 38, '44': 39, '45': 40, '46': 41, '47': 42, '48': 43, 
+            '49': 44, '5': 45, '50': 46, '51': 47, '52': 48, '53': 49, '54': 50, '55': 51, '56': 52, '6': 53, '7': 54, 
+            '8': 55, '9': 56}
 
 class Net:
-    def __init__(self, model_path, feature_path, gpu_id=None, idx2label=label_id_name_dict, refer=pr_dic):
+    def __init__(self, model_path, feature_path, gpu_id=0, idx2label=label_id_name_dict, refer=pr_dic):
         self.gpu_id = gpu_id
         self.model_path = model_path
         self.feature_path = feature_path
@@ -85,16 +89,18 @@ class Net:
         self.refer_map_huawei = dict([(v,k) for (k,v) in label_id_name_dict.items()])
         self.refer = dict([(v,k) for (k,v) in refer.items()])
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
+                                        std=[0.229, 0.224, 0.225])
 
         self.transforms = transforms.Compose([
-            transforms.Resize(320),
+            transforms.Resize(512),
             transforms.CenterCrop(320),
             #ScaleResize((320, 320)),
             transforms.ToTensor(),
             self.normalize
         ])
-        self.model = se_res2net50_26w_8s(pretrained=False, num_classes=54)
+        self.model = efficientnet_b5()
+        in_features = self.model._fc.in_features
+        self.model._fc = nn.Linear(in_features, 57)
         if torch.cuda.is_available() and gpu_id is not None:
             self.use_cuda = True
             print('Using GPU for inference')
@@ -112,21 +118,6 @@ class Net:
                 tmp = key[7:]
                 state_dict[tmp] = value
             self.model.load_state_dict(state_dict)
-        
-
-    def gcam(self, model, img, pic, target_layer_names, use_cuda=True, mode='resnet'):
-        import cv2
-        grad_cam = GradCam(model=model, target_layer_names=[target_layer_names], use_cuda=use_cuda, mode=mode)
-        img = img
-        img = np.float32(cv2.resize(img, (320, 320))) / 255
-        input = pic
-        target_index = None
-        mask, output, features = grad_cam(input, target_index)
-        cam = show_cam_on_image(img, mask)
-        # import matplotlib.pyplot as plt
-        # plt.imshow(cam)
-        # plt.show()
-        return cam, output, features
 
     def predict(self, img, top_k=1, search_length=20, CAM=False):
         self.model.eval()
@@ -154,17 +145,10 @@ class Net:
         # except Exception as err:
         #     errout = traceback.format_exc()
         if CAM:
-            # start = time.time()
-            cam, pred_score, eval_features = self.gcam(self.model, img, pic, 'layer4', use_cuda=self.use_cuda, mode='resnet')
-            # print('CAM out', pred_score)
-            # print('CAM features', features)
-            # print('CAM Time:', time.time() - start)
+            cam, pred_score, eval_features = get_CAM(self.model, '_bn1', '_dropout', img, pic)
+            
         with torch.no_grad():
-            # start = time.time()
             # pred_score = self.model(pic)
-            # print(pred_score)
-            # print('Forward Time:', time.time() - start)
-
             pred_score = F.softmax(pred_score.data, dim=1)
             prob, cate = torch.topk(pred_score.data, k=top_k)
             # if self.use_cuda:
@@ -174,11 +158,15 @@ class Net:
             #     print('Forward fea:', eval_features)
             # try:
             cos_matrix = getCosDist(eval_features, train_features)
+            # print(eval_features)
+            # print(train_features)
             similarity = get_similarity((cos_matrix))
             distance, index = torch.topk(similarity, search_length, dim=1)
             labels = list(train_label[index].cpu().numpy())
             index = index.cpu().numpy()
+            # print(labels)
             image_names = list(train_image_name[index[0]])
+            # print(image_names)
             num_all_pred_cate = len(set(list(labels[0])))
             top_k_dis = min(top_k, num_all_pred_cate)
             '''
@@ -186,6 +174,7 @@ class Net:
             [('a', 5), ('b', 4), ('c', 3)]
             '''
             labels_cos = [Counter(i).most_common(top_k_dis) for i in labels]
+            print(labels_cos)
             # except Exception as err:
             #     errout = traceback.format_exc()
 
@@ -227,7 +216,7 @@ if __name__ == '__main__':
     model_path = './model_best.pth.tar'
     feature_path = './features_train_baidu.pkl'
     idx2label = label_id_name_dict
-    image = os.path.join('./12.png')
+    image = os.path.join('./1.jpg')
     img = np.array(Image.open(image).convert('RGB'))
     refer = pr_dic
     model = Net(model_path, feature_path, idx2label=idx2label, refer=refer)
