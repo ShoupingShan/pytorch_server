@@ -1,5 +1,5 @@
 # flask_pytorch
-using flask to run pytorch model
+using flask to run pytorch model                                                                 [中文版](./README_chinese.md)
 
 ## start server
 ```sh
@@ -19,8 +19,10 @@ you will see a result like this
 
 
 ## Config
->base_url = 'https://****.com/'#Your online website
+>base_url = 'https://.com/'#Your online website (HTTPS only)
+>
 >base_url = 'http://127.0.0.1:5000/' #Test on localhost
+>
 >adminGroup = ['User1', 'User2', 'User3'] #Admin users WeChat’s nick name
 # Acknowledgement
 This repository refers to [flask_pytorch](https://github.com/WenmuZhou/flask_pytorch).
