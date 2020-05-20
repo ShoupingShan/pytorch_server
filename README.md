@@ -3,15 +3,24 @@ using flask to run pytorch model
 
 ## start server
 ```sh
-python3 app.py
+python app.py
 ```
 you will see a result like this
 
 ![flask](./static/img/flask.jpg)
 
+## Functions
+
+1. Simulation database by pickle
+
+2. Crawler crawls xi 'an information in real time
+3.  Users’ feedback
+4.  Users upload image prediction results feedback
+
+
 ## Config
->base_url = 'https://hunshuimoyu.picp.vip/'#开启线上服务
->base_url = 'http://127.0.0.1:5000/' #本地开启服务
->adminGroup = ['SHP', 'Nevermore', 'Whitney'] #管理员微信昵称，只有在该用户群中的微信才可以访问后台
+>base_url = 'https://****.com/'#Your online website
+>base_url = 'http://127.0.0.1:5000/' #Test on localhost
+>adminGroup = ['User1', 'User2', 'User3'] #Admin users WeChat’s nick name
 # Acknowledgement
-This repository refers to [deploy-pytorch-model](https://github.com/L1aoXingyu/deploy-pytorch-model), and thank the author again.
+This repository refers to [flask_pytorch](https://github.com/WenmuZhou/flask_pytorch).
