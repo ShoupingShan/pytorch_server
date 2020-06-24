@@ -36,10 +36,21 @@ python app.py
 
 ## 前端示意
 
-1. 用户查询![search](./assets/search.jpg)
-2. 类别介绍![search](./assets/category.jpg)
-3. 新闻资讯![search](./assets/news.jpg)
-4. 后台管理![search](./assets/admin.jpg)
+1. 用户查询
+
+   <img src="./assets/search.jpg" alt="search" style="zoom: 25%;" />
+
+2. 类别介绍
+
+   <img src="./assets/category.jpg" alt="search" style="zoom: 25%;" />
+
+3. 新闻资讯
+
+   <img src="./assets/news.jpg" alt="search" style="zoom: 25%;" />
+
+4. 后台管理
+
+   <img src="./assets/admin.jpg" alt="search" style="zoom: 25%;" />
 
 ## 结构说明
 
